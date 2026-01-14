@@ -39,7 +39,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Usiamo il modello "flash": veloce, economico/gratis, ideale per task semplici
 const model = genAI.getGenerativeModel({ 
-  model: "gemini-1.5-flash-001",
+  model: "gemini-2.0-flash-001",
   // Questa configurazione è FONDAMENTALE: costringe l'AI a rispondere SOLO in JSON.
   // Evita errori di parsing e rimuove la necessità di usare regex complesse.
   generationConfig: { 
