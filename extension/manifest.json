@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Synapse - Zero-Click Productivity",
+  "version": "1.0.0",
+  "description": "Transform text into executable actions",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://mail.google.com/*",
+    "https://web.whatsapp.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [{
+    "matches": [
+      "https://mail.google.com/*",
+      "https://web.whatsapp.com/*"
+    ],
+    "js": ["content.js"],
+    "css": ["content.css"]
+  }],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

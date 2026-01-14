@@ -1,0 +1,1 @@
+console.log('Synapse background script loaded');
