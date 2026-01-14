@@ -1,31 +1,26 @@
 console.log('⚡ Synapse loaded!');
-
-// URL del tuo backend su Render (quello corretto che abbiamo trovato prima)
 const API_URL = 'https://synapse-api-xf4z.onrender.com/api/v1';
-
-// 🔴 INCOLLA QUI IL TOKEN CHE HAI COPIATO DALLA DASHBOARD
-const AUTH_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhMWFiOGYwNy03YTc5LTQzNWMtYmYwOS1jOGQzMGU3MWVmMjgiLCJlbWFpbCI6ImZyYXNhcjg2QGdtYWlsLmNvbSIsImlhdCI6MTc2ODQwNDM5MywiZXhwIjoxNzcwOTk2MzkzfQ.t3Q8sU9QrUOd5693afRE-JgRubS6Q4rtCGfF78Ago2E'; 
 
 document.addEventListener('mouseup', async () => {
   const selectedText = window.getSelection().toString().trim();
   
-  // Seleziona solo se il testo è abbastanza lungo (es. > 5 caratteri)
   if (selectedText.length > 5) {
-    console.log('Selected text:', selectedText);
+    // Prima di fare qualsiasi cosa, controlliamo se l'utente è loggato
+    const stored = await chrome.storage.local.get(['synapse_token']);
     
-    // Logica semplice: cerca parole chiave temporali
-    const dateKeywords = ['giovedì', 'venerdì', 'domani', 'alle', 'meeting', 'chiama', 'ricorda'];
-    const hasDateHint = dateKeywords.some(keyword => 
-      selectedText.toLowerCase().includes(keyword)
-    );
+    // Se non c'è token, ignoriamo (o potremmo mostrare un avviso "Login required")
+    if (!stored.synapse_token) return;
+
+    const dateKeywords = ['lunedì', 'giovedì', 'martedì', 'marcoledì', 'giovedì', 'venerdì', 'sabato', 'domenica', 'appuntamento', 'domani', 'alle', 'meeting', 'chiama', 'ricorda'];
+    const hasDateHint = dateKeywords.some(keyword => selectedText.toLowerCase().includes(keyword));
     
     if (hasDateHint) {
-      showQuickAction(selectedText);
+      showQuickAction(selectedText, stored.synapse_token);
     }
   }
 });
 
-function showQuickAction(text) {
+function showQuickAction(text, token) {
   const existing = document.getElementById('synapse-quick-action');
   if (existing) existing.remove();
   
