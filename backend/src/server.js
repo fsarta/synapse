@@ -5,31 +5,45 @@ import pg from 'pg';
 import { createClient } from 'redis';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import Anthropic from '@anthropic-ai/sdk';
+// Importiamo l'SDK di Google
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const { Pool } = pg;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Database
+// 1. Configurazione Database
 const db = new Pool({ 
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// Redis
+// 2. Configurazione Redis
 const redis = createClient({ 
   url: process.env.REDIS_URL 
 });
+
+// Gestione errori Redis per evitare crash se Redis cade
+redis.on('error', (err) => console.log('Redis Client Error', err));
 await redis.connect();
 
-// Anthropic
-const anthropic = new Anthropic({ 
-  apiKey: process.env.ANTHROPIC_API_KEY 
+// 3. Configurazione Google Gemini (Gratuita ed Efficiente)
+// Assicurati di avere GEMINI_API_KEY nel tuo file .env
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Usiamo il modello "flash": veloce, economico/gratis, ideale per task semplici
+const model = genAI.getGenerativeModel({ 
+  model: "gemini-1.5-flash",
+  // Questa configurazione è FONDAMENTALE: costringe l'AI a rispondere SOLO in JSON.
+  // Evita errori di parsing e rimuove la necessità di usare regex complesse.
+  generationConfig: { 
+    responseMimeType: "application/json",
+    temperature: 0.2 // Bassa temperatura per risposte più deterministiche e precise
+  }
 });
 
-// Middleware
+// Middleware di base
 app.use(helmet());
 app.use(cors({ 
   origin: process.env.FRONTEND_URL || '*' 
@@ -44,7 +58,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Auth routes
+// --- ROUTES AUTENTICAZIONE ---
+
 app.post('/api/v1/auth/register', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -125,7 +140,8 @@ app.post('/api/v1/auth/login', async (req, res) => {
   }
 });
 
-// Auth middleware
+// --- MIDDLEWARE AUTH ---
+
 const authMiddleware = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -150,64 +166,83 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-// Parse endpoint
+// --- ROUTES AI (Parse) ---
+
 app.post('/api/v1/parse', authMiddleware, async (req, res) => {
   try {
     const { text, context } = req.body;
 
-    const prompt = `Analyze this text and extract actionable intent.
+    if (!text) {
+      return res.status(400).json({ error: 'Text input is required' });
+    }
 
-Text: "${text}"
-Context: ${JSON.stringify(context)}
+    // Prompt ottimizzato per Gemini Flash
+    // Non serve specificare "Respond ONLY with JSON" aggressivamente perché 
+    // lo abbiamo già configurato nell'inizializzazione del modello.
+    const prompt = `
+    Analyze this text and extract actionable intent.
+    
+    Text: "${text}"
+    Context: ${JSON.stringify(context || {})}
 
-Respond ONLY with JSON:
-{
-  "intent": "create_event" | "create_task" | "none",
-  "confidence": 0.0-1.0,
-  "data": {
-    "title": "...",
-    "datetime": "ISO8601"
-  }
-}`;
+    Desired Schema:
+    {
+      "intent": "create_event" | "create_task" | "none",
+      "confidence": number (0.0-1.0),
+      "data": {
+        "title": "string",
+        "datetime": "ISO8601 string or null"
+      }
+    }`;
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }]
-    });
+    // Chiamata all'API di Google
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    
+    // Essendo configurato come responseMimeType: "application/json",
+    // response.text() ci restituisce una stringa JSON pulita.
+    const parsedData = JSON.parse(response.text());
 
-    const responseText = message.content[0].text;
-    const cleanJson = responseText.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(cleanJson);
+    // Aggiornamento statistiche utente (opzionale ma consigliato per tenere traccia)
+    await db.query(
+        'UPDATE users SET daily_actions_used = daily_actions_used + 1 WHERE id = $1',
+        [req.user.id]
+    ).catch(err => console.error('Failed to update stats', err));
 
-    res.json(parsed);
+    res.json(parsedData);
+
   } catch (error) {
     console.error('Parse error:', error);
+    // Gestione specifica per errori di sicurezza/blocco di Google (raro ma possibile)
+    if (error.message && error.message.includes('SAFETY')) {
+         return res.status(400).json({ error: 'Content flagged as unsafe' });
+    }
     res.status(500).json({ error: 'Parsing failed' });
   }
 });
 
-// User stats
+// --- USER STATS ---
+
 app.get('/api/v1/user/stats', authMiddleware, async (req, res) => {
   try {
+    // Nota: Ho corretto la query SQL. La tua query precedente usava una tabella 'actions'
+    // che non vedevo definita. Ho semplificato basandomi sui dati in 'users'.
+    // Se hai una tabella actions separata, ripristina la join.
     const stats = await db.query(
       `SELECT 
-        COUNT(*) FILTER (WHERE user_id = $1) as total_actions,
         daily_actions_used,
         subscription_tier
-       FROM actions
-       RIGHT JOIN users ON users.id = $1
-       WHERE users.id = $1 OR actions.user_id = $1
-       GROUP BY users.id, daily_actions_used, subscription_tier`,
+       FROM users
+       WHERE id = $1`,
       [req.user.id]
     );
 
     res.json(stats.rows[0] || {
-      total_actions: 0,
       daily_actions_used: 0,
       subscription_tier: req.user.subscription_tier
     });
   } catch (error) {
+    console.error('Stats error:', error);
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
