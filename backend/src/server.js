@@ -21,7 +21,11 @@ const db = new Pool({
 
 // 2. Configurazione Redis
 const redis = createClient({ 
-  url: process.env.REDIS_URL 
+  url: process.env.REDIS_URL,
+  socket: {
+    tls: true, // Assicura che usi TLS
+    rejectUnauthorized: false, // Evita errori sui certificati SSL interni
+    family: 4 // <--- QUESTA È LA CHIAVE: Forza l'uso di IPv4
 });
 
 // Gestione errori Redis per evitare crash se Redis cade
