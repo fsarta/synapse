@@ -51,38 +51,30 @@ function showQuickAction(text, token) {
     const btnContent = button.querySelector('div');
     btnContent.innerHTML = "⏳ Thinking..."; // Feedback visivo
     
-    try {
-      const response = await fetch(`${API_URL}/parse`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${AUTH_TOKEN}` // Qui usiamo il tuo pass
-        },
-        body: JSON.stringify({
-          text: text,
-          context: { url: window.location.href }
-        })
-      });
-
-      if (!response.ok) throw new Error('Auth failed or Server error');
-
-      const data = await response.json();
-      console.log("AI Response:", data);
-
-      // Mostra il risultato dell'AI
-      alert(
-        `🤖 Synapse AI Plan:\n\n` +
-        `Intent: ${data.intent.toUpperCase()}\n` +
-        `Title: ${data.data.title || 'N/A'}\n` +
-        `Time: ${data.data.datetime || 'N/A'}\n\n` +
-        `(Check Dashboard for stats!)`
-      );
-
-    } catch (error) {
-      alert("Error: " + error.message + "\n(Did you paste the token?)");
-    }
-    
-    button.remove();
+    chrome.runtime.sendMessage({
+      type: 'ANALYZE_TEXT',
+      text: text,
+      token: token,
+      url: window.location.href
+    }, (response) => {
+      
+      // Gestione della risposta dal Background
+      if (chrome.runtime.lastError) {
+        alert("Extension Error: " + chrome.runtime.lastError.message);
+      } else if (response && response.success) {
+        const data = response.data;
+        alert(
+          `🤖 PLAN:\n` +
+          `Intent: ${data.intent.toUpperCase()}\n` +
+          `Title: ${data.data.title || 'N/A'}\n` +
+          `Time: ${data.data.datetime || 'N/A'}`
+        );
+      } else {
+        alert("Error: " + (response ? response.error : "Unknown error"));
+      }
+      
+      button.remove();
+    });
   };
   
   document.body.appendChild(button);
