@@ -26,6 +26,7 @@ const redis = createClient({
     tls: true, // Assicura che usi TLS
     rejectUnauthorized: false, // Evita errori sui certificati SSL interni
     family: 4 // <--- QUESTA È LA CHIAVE: Forza l'uso di IPv4
+  }
 });
 
 // Gestione errori Redis per evitare crash se Redis cade
